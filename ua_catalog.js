@@ -1,221 +1,214 @@
 (function () {
     'use strict';
 
-    if (window.ua_catalog_plugin_v2) return;
-    window.ua_catalog_plugin_v2 = true;
+    if (window.ua_catalog_plugin_v3) return;
+    window.ua_catalog_plugin_v3 = true;
 
     var network = new Lampa.Reguest();
+    network.timeout(15000);
 
-    // ===== Джерела + розділи =====
+    // Тільки перевірені / найстабільніші URL
     var SOURCES = {
         uaserial: {
             title: 'UA Серіал',
             host: 'https://uaserial.tv',
             sections: [
-                { title: 'Новинки',       url: 'https://uaserial.tv/' },
-                { title: 'Фільми',        url: 'https://uaserial.tv/movie' },
-                { title: 'Серіали',       url: 'https://uaserial.tv/serial' },
-                { title: 'Мультфільми',   url: 'https://uaserial.tv/cartoon-movie' },
-                { title: 'Мультсеріали',  url: 'https://uaserial.tv/cartoon-series' },
-                { title: 'Аніме',         url: 'https://uaserial.tv/anime' }
+                { title: 'Новинки',      url: 'https://uaserial.tv/' },
+                { title: 'Фільми',       url: 'https://uaserial.tv/movie' },
+                { title: 'Серіали',      url: 'https://uaserial.tv/serial' },
+                { title: 'Мультфільми',  url: 'https://uaserial.tv/cartoon-movie' },
+                { title: 'Мультсеріали', url: 'https://uaserial.tv/cartoon-series' }
             ]
         },
         eneyida: {
             title: 'Енеїда',
             host: 'https://eneyida.tv',
             sections: [
-                { title: 'Новинки',       url: 'https://eneyida.tv/' },
-                { title: 'Фільми',        url: 'https://eneyida.tv/films/' },
-                { title: 'Серіали',       url: 'https://eneyida.tv/series/' },
-                { title: 'Мультфільми',   url: 'https://eneyida.tv/cartoons/' }
+                { title: 'Новинки', url: 'https://eneyida.tv/' }
+                // інші розділи часто 404 або змінюються — залишаємо головну
             ]
         },
         kinoukr: {
             title: 'КіноУкр',
             host: 'https://kinoukr.tv',
             sections: [
-                { title: 'Новинки',       url: 'https://kinoukr.tv/' },
-                { title: 'Фільми',        url: 'https://kinoukr.tv/filmss/' },
-                { title: 'Серіали',       url: 'https://kinoukr.tv/series/' },
-                { title: 'Мультфільми',   url: 'https://kinoukr.tv/cartoonss/' },
-                { title: 'Мультсеріали',  url: 'https://kinoukr.tv/cartoon-seriess/' }
-            ]
-        },
-        rezka: {
-            title: 'Rezka',
-            host: 'https://rezka.ag',
-            sections: [
-                { title: 'Головна', url: 'https://rezka.ag/' }
-            ]
-        },
-        filmix: {
-            title: 'Filmix',
-            host: 'https://filmix.my',
-            sections: [
-                { title: 'Головна', url: 'https://filmix.my/' }
-            ]
-        },
-        aniliberty: {
-            title: 'AniLiberty',
-            host: 'https://aniliberty.top',
-            sections: [
-                { title: 'Головна', url: 'https://aniliberty.top/' }
+                { title: 'Новинки',      url: 'https://kinoukr.tv/' },
+                { title: 'Фільми',       url: 'https://kinoukr.tv/filmss/' },
+                { title: 'Серіали',      url: 'https://kinoukr.tv/series/' },
+                { title: 'Мультфільми',  url: 'https://kinoukr.tv/cartoonss/' }
             ]
         }
     };
 
-    // ===== Парсери =====
     function cleanTitle(t) {
-        return (t || '').replace(/\s+/g, ' ').trim();
+        return (t || '').replace(/\s+/g, ' ').replace(/&nbsp;/g, ' ').trim();
     }
 
-    function parseUaserial(html, host) {
-        var items = [];
-        var seen = {};
-
-        // Типові картки: назва + англ. назва + рік
-        var re = /([А-Яа-яЇїІіЄєҐґA-Za-z0-9:«»""'\-\s]{4,80})\s*\n\s*([A-Za-z0-9:«»""'\-\s]{3,80})\s*\n\s*[\d.]+\s*\n\s*(20\d{2})/g;
-        var m;
-        while ((m = re.exec(html)) !== null) {
+    function parseUaserial(html) {
+        var items = [], seen = {};
+        // Назви з карток (українська + англійська + рік)
+        var blocks = html.split(/Дивитися|Трейлер/i);
+        blocks.forEach(function (block) {
+            var m = block.match(/([А-Яа-яЇїІіЄєҐґA-Za-z0-9:«»""'\-\.,!\?]{4,70})\s+([A-Za-z][A-Za-z0-9:«»""'\-\.,!\? ]{2,60})\s+(\d\.\d|\d)\s+(20\d{2})/);
+            if (!m) {
+                m = block.match(/([А-Яа-яЇїІіЄєҐґA-Za-z0-9:«»""'\-\.,!\?]{5,70})\s+(20\d{2})/);
+            }
+            if (!m) return;
             var title = cleanTitle(m[1]);
-            var orig  = cleanTitle(m[2]);
-            var year  = m[3];
-            if (title.length < 3 || seen[title]) continue;
-            // відсікаємо службові слова
-            if (/^(Дивитися|Трейлер|Жанр|Студія|Фільми|Серіали|Мульт)/i.test(title)) continue;
+            if (title.length < 3 || seen[title]) return;
+            if (/^(Жанр|Студія|Фільми|Серіали|Мульт|Аніме|Топ|Останн)/i.test(title)) return;
             seen[title] = true;
             items.push({
                 title: title,
-                original_title: orig || title,
-                year: year,
-                img: '',
-                url: host
+                original_title: m[2] && /[A-Za-z]/.test(m[2]) ? cleanTitle(m[2]) : title,
+                year: (m[3] && m[3].length === 4) ? m[3] : (m[4] || ''),
+                img: ''
             });
-        }
+        });
 
-        // Запасний варіант — просто заголовки
-        if (items.length < 8) {
-            var re2 = />([А-Яа-яЇїІіЄєҐґA-Za-z0-9:«»""'\-\s]{5,70})</g;
-            while ((m = re2.exec(html)) !== null) {
-                var t = cleanTitle(m[1]);
+        if (items.length < 6) {
+            var re = />([А-Яа-яЇїІіЄєҐґ][^<]{4,65})</g, m2;
+            while ((m2 = re.exec(html)) !== null) {
+                var t = cleanTitle(m2[1]);
                 if (t.length < 4 || seen[t]) continue;
-                if (/^(Дивитися|Трейлер|Жанр|Студія|Фільми|Серіали|Мульт|Аніме|Топ)/i.test(t)) continue;
+                if (/Дивитися|Трейлер|Жанр|Студія|Фільми|Серіали|Мульт|Аніме|Збережен|Історія/i.test(t)) continue;
                 seen[t] = true;
-                items.push({ title: t, original_title: t, year: '', img: '', url: host });
+                items.push({ title: t, original_title: t, year: '', img: '' });
             }
         }
-        return items.slice(0, 36);
+        return items.slice(0, 40);
     }
 
     function parseEneyida(html) {
-        var items = [];
-        var seen = {};
-        var re = /href="(https:\/\/eneyida\.tv\/\d+-[^"]+\.html)"[^>]*>([^<]{3,90})</gi;
+        var items = [], seen = {};
+        var re = /href="(https?:\/\/eneyida\.tv\/\d+-[^"]+\.html)"[^>]*>([^<]{3,90})</gi;
         var m;
         while ((m = re.exec(html)) !== null) {
             if (seen[m[1]]) continue;
             seen[m[1]] = true;
             var title = cleanTitle(m[2]);
             if (title.length < 2) continue;
-            items.push({
-                title: title,
-                original_title: title,
-                year: '',
-                img: '',
-                url: m[1]
-            });
+            items.push({ title: title, original_title: title, year: '', img: '', url: m[1] });
         }
-        return items.slice(0, 36);
+        return items.slice(0, 40);
     }
 
     function parseKinoukr(html) {
-        var items = [];
-        var seen = {};
-        var re = /href="(https:\/\/kinoukr\.tv\/\d+-[^"]+\.html)"[^>]*>([^<]{3,100})</gi;
+        var items = [], seen = {};
+        var re = /href="(https?:\/\/kinoukr\.tv\/\d+-[^"]+\.html)"[^>]*>([^<]{3,100})</gi;
         var m;
         while ((m = re.exec(html)) !== null) {
             if (seen[m[1]]) continue;
             seen[m[1]] = true;
             var title = cleanTitle(m[2]);
             if (title.length < 2) continue;
-            items.push({
-                title: title,
-                original_title: title,
-                year: '',
-                img: '',
-                url: m[1]
+            items.push({ title: title, original_title: title, year: '', img: '', url: m[1] });
+        }
+        return items.slice(0, 40);
+    }
+
+    function parsePage(key, html) {
+        if (key === 'uaserial') return parseUaserial(html);
+        if (key === 'eneyida')  return parseEneyida(html);
+        if (key === 'kinoukr')  return parseKinoukr(html);
+        return [];
+    }
+
+    // Надійний запит: silent → native → fallback
+    function fetchPage(url, onOk, onFail) {
+        var done = false;
+        function ok(data) {
+            if (done) return;
+            done = true;
+            onOk(typeof data === 'string' ? data : (data || ''));
+        }
+        function fail() {
+            if (done) return;
+            done = true;
+            onFail && onFail();
+        }
+
+        try {
+            network.silent(url, ok, function () {
+                // друга спроба через native
+                if (network.native) {
+                    network.native(url, ok, fail);
+                } else {
+                    fail();
+                }
             });
+        } catch (e) {
+            fail();
         }
-        return items.slice(0, 36);
+
+        // таймаут безпеки
+        setTimeout(function () {
+            if (!done) fail();
+        }, 16000);
     }
 
-    function parseGeneric(html, host) {
-        var items = [];
-        var seen = {};
-        var re = /href="([^"]+)"[^>]*>([^<]{4,80})</gi;
-        var m;
-        while ((m = re.exec(html)) !== null) {
-            var href = m[1];
-            var title = cleanTitle(m[2]);
-            if (title.length < 4 || seen[title]) continue;
-            if (!/film|movie|serial|anime|watch|cart|мульт/i.test(href) && title.length < 8) continue;
-            if (href.indexOf('http') !== 0) href = host + (href[0] === '/' ? '' : '/') + href;
-            seen[title] = true;
-            items.push({ title: title, original_title: title, year: '', img: '', url: href });
-        }
-        return items.slice(0, 30);
-    }
-
-    function parsePage(sourceKey, html, host) {
-        if (sourceKey === 'uaserial') return parseUaserial(html, host);
-        if (sourceKey === 'eneyida')  return parseEneyida(html);
-        if (sourceKey === 'kinoukr')  return parseKinoukr(html);
-        return parseGeneric(html, host);
-    }
-
-    // ===== Компонент каталогу =====
     function Catalog(object) {
         var scroll = new Lampa.Scroll({ mask: true, over: true });
         var html   = $('<div class="category-full"></div>');
         var body   = $('<div class="category-full__body"></div>');
         var sourceKey = object.source || 'uaserial';
         var source = SOURCES[sourceKey];
-        var loaded = 0;
-        var total  = source.sections.length;
+        var left = source.sections.length;
+        var hasAny = false;
 
         this.create = function () {
             this.activity.loader(true);
             body.empty();
 
+            if (!source || !source.sections.length) {
+                body.append('<div class="empty__text">Немає розділів для цього джерела</div>');
+                this.activity.loader(false);
+                this.activity.toggle();
+                return;
+            }
+
             source.sections.forEach(function (sec) {
-                network.silent(sec.url, function (pageHtml) {
-                    var items = parsePage(sourceKey, pageHtml || '', source.host);
+                fetchPage(sec.url, function (pageHtml) {
+                    var items = parsePage(sourceKey, pageHtml || '');
                     if (items.length) {
+                        hasAny = true;
                         appendLine(sec.title + ' — ' + source.title, items);
                     }
-                    loaded++;
-                    if (loaded >= total) {
-                        if (!body.children().length) {
-                            body.append('<div class="empty__text">Не вдалося завантажити розділи. Спробуйте пізніше або VPN.</div>');
-                        }
-                        this.activity.loader(false);
-                        this.activity.toggle();
-                    }
+                    finishOne();
                 }.bind(this), function () {
-                    loaded++;
-                    if (loaded >= total) {
-                        if (!body.children().length) {
-                            body.append('<div class="empty__text">Помилка завантаження розділів.</div>');
-                        }
-                        this.activity.loader(false);
-                        this.activity.toggle();
-                    }
+                    finishOne();
                 }.bind(this));
             }.bind(this));
+
+            var self = this;
+            function finishOne() {
+                left--;
+                if (left > 0) return;
+
+                if (!hasAny) {
+                    body.append(
+                        '<div class="empty__text" style="padding:2em;text-align:center">' +
+                        'Не вдалося завантажити розділи.<br><br>' +
+                        'Можливі причини:<br>' +
+                        '• сайт блокує запити (Cloudflare / захист)<br>' +
+                        '• потрібен VPN або проксі в налаштуваннях Lampa<br>' +
+                        '• змінилася адреса сайту<br><br>' +
+                        'Спробуйте інше джерело або увімкніть проксі.' +
+                        '</div>'
+                    );
+                }
+                self.activity.loader(false);
+                self.activity.toggle();
+            }
         };
 
         function appendLine(title, items) {
-            var line = $('<div class="category-line" style="margin-bottom:1.5em"><div class="category-line__title" style="padding:0.6em 1em;font-weight:600">' + title + '</div><div class="category-line__body" style="display:flex;flex-wrap:wrap;gap:0.8em;padding:0 0.5em"></div></div>');
+            var line = $(
+                '<div class="category-line" style="margin-bottom:1.8em">' +
+                '<div class="category-line__title" style="padding:0.7em 1em;font-weight:600;font-size:1.15em">' + title + '</div>' +
+                '<div class="category-line__body" style="display:flex;flex-wrap:wrap;gap:0.7em;padding:0 0.6em"></div>' +
+                '</div>'
+            );
             var cont = line.find('.category-line__body');
 
             items.forEach(function (item) {
@@ -223,14 +216,9 @@
                     title: item.title,
                     release_year: item.year || ''
                 });
-
                 card.addClass('card--collection selector');
-                if (item.img) {
-                    card.find('.card__img').css('background-image', 'url(' + item.img + ')');
-                }
 
                 card.on('hover:enter', function () {
-                    // Відкриваємо стандартну картку Lampa → Online / Torrents працюють
                     Lampa.Activity.push({
                         url: '',
                         title: item.title,
@@ -244,10 +232,8 @@
                         }
                     });
                 });
-
                 cont.append(card);
             });
-
             body.append(line);
         }
 
@@ -282,14 +268,12 @@
 
     Lampa.Component.add('ua_catalog', Catalog);
 
-    // ===== Меню =====
     function openSourceSelect() {
         var items = Object.keys(SOURCES).map(function (key) {
             return { title: SOURCES[key].title, source: key };
         });
-
         Lampa.Select.show({
-            title: 'UA Каталог — оберіть джерело',
+            title: 'UA Каталог',
             items: items,
             onSelect: function (a) {
                 Lampa.Activity.push({
@@ -300,34 +284,21 @@
                     page: 1
                 });
             },
-            onBack: function () {
-                Lampa.Controller.toggle('menu');
-            }
+            onBack: function () { Lampa.Controller.toggle('menu'); }
         });
     }
 
     function addMenuButton() {
         if ($('.menu .menu__item[data-ua-catalog]').length) return;
-
-        var button = $(`
-            <li class="menu__item selector" data-ua-catalog="1">
-                <div class="menu__ico">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/>
-                    </svg>
-                </div>
-                <div class="menu__text">UA Каталог</div>
-            </li>
-        `);
-
+        var button = $(
+            '<li class="menu__item selector" data-ua-catalog="1">' +
+            '<div class="menu__ico"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/></svg></div>' +
+            '<div class="menu__text">UA Каталог</div></li>'
+        );
         button.on('hover:enter', openSourceSelect);
         $('.menu .menu__list').eq(0).append(button);
     }
 
     if (window.appready) addMenuButton();
-    else {
-        Lampa.Listener.follow('app', function (e) {
-            if (e.type === 'ready') addMenuButton();
-        });
-    }
+    else Lampa.Listener.follow('app', function (e) { if (e.type === 'ready') addMenuButton(); });
 })();
